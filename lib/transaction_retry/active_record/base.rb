@@ -21,13 +21,14 @@ module TransactionRetry
 
           begin
             transaction_without_retry(*objects, &block)
-          rescue ::ActiveRecord::TransactionIsolationConflict
+          rescue Exception => exc
+            raise unless exc.class.name == "Mysql2::Error" && (exc.message.include?("Lock wait timeout exceeded") || exc.message.include?("Can't connect to MySQL server"))
             raise if retry_count >= TransactionRetry.max_retries
             raise if tr_in_nested_transaction?
             
             retry_count += 1
             postfix = { 1 => 'st', 2 => 'nd', 3 => 'rd' }[retry_count] || 'th'
-            logger.warn "Transaction isolation conflict detected. Retrying for the #{retry_count}-#{postfix} time..." if logger
+            logger.warn "MySQL intermittent issue detected (#{exc.message}). Retrying for the #{retry_count}-#{postfix} time..." if logger
             tr_exponential_pause( retry_count )
             retry
           end
